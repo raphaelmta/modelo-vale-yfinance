@@ -46,7 +46,7 @@ except ImportError as e:
     sys.exit(1)
 
 # Função corrigida para extrair dados com tratamento de erros para MultiIndex
-def dsa_extrai_dados(ticker):
+def rmta_extrai_dados(ticker):
     try:
         print(f"Baixando dados para {ticker} via Yahoo Finance...")
         # Definir auto_adjust=True explicitamente para evitar avisos
@@ -104,7 +104,7 @@ def dsa_extrai_dados(ticker):
         sys.exit(1)
 
 # Função para engenharia de atributos aprimorada
-def dsa_func_engenharia_atributos(df):
+def rmta_func_engenharia_atributos(df):
     try:
         print("Iniciando engenharia de atributos...")
         df_copy = df.copy()
@@ -204,7 +204,7 @@ def dsa_func_engenharia_atributos(df):
         sys.exit(1)
 
 # Função para ajustar o formato dos dados
-def dsa_ajusta_formato_dados(X_s, y_s, lag):
+def rmta_ajusta_formato_dados(X_s, y_s, lag):
     try:
         print(f"Ajustando formato dos dados com lag={lag}...")
         if len(X_s) != len(y_s):
@@ -236,7 +236,7 @@ def dsa_ajusta_formato_dados(X_s, y_s, lag):
         sys.exit(1)
 
 # Função do transformer encoder aprimorada
-def dsa_transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
+def rmta_transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
     try:
         x = layers.LayerNormalization(epsilon=1e-6)(inputs)
         x = layers.MultiHeadAttention(key_dim=head_size, num_heads=num_heads, dropout=dropout)(x, x, x)
@@ -254,7 +254,7 @@ def dsa_transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
         sys.exit(1)
 
 # Função de criação do modelo aprimorada
-def dsa_cria_modelo(input_shape, 
+def rmta_cria_modelo(input_shape, 
                    head_size, 
                    num_heads, 
                    ff_dim, 
@@ -272,7 +272,7 @@ def dsa_cria_modelo(input_shape,
         
         # Blocos Transformer para atenção
         for _ in range(num_transformer_blocks):
-            x = dsa_transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
+            x = rmta_transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
         
         # Camada GRU para processamento sequencial
         x = layers.GRU(128, return_sequences=False)(x)
@@ -352,7 +352,7 @@ def gerar_previsoes_futuras(modelo, df, features, sc, lag, dias_futuros=90):
             df_temp = pd.concat([df_temp, nova_linha])
             
             # Recalcular indicadores técnicos
-            df_temp = dsa_func_engenharia_atributos(df_temp)
+            df_temp = rmta_func_engenharia_atributos(df_temp)
         
         # Extrair apenas as linhas futuras
         df_futuro = df_temp.iloc[-dias_futuros:]
@@ -543,7 +543,7 @@ def criar_grafico_estrategia(df, df_futuro, split_val, ticker, nome_ativo, setor
             plt.scatter(datas_compra_futuro, df_futuro.loc[datas_compra_futuro, "close"], 
                        color='green', marker='^', alpha=0.7, s=50, label='Sinal Compra Futuro')
             plt.scatter(datas_venda_futuro, df_futuro.loc[datas_venda_futuro, "close"], 
-                       color='red', marker='v', alpha=0.7, s=50, label='Sinal Venda Futuro')
+                        color='red', marker='v', alpha=0.7, s=50, label='Sinal Venda Futuro')
         
         plt.xlabel("Data", fontsize=10)
         plt.ylabel("Preço ($)", fontsize=10)
@@ -635,7 +635,7 @@ def main():
         print("="*50)
         ticker = "VALE"  # Ticker correto da Vale na NYSE
         print(f"Baixando dados financeiros da Vale S.A. (NYSE: {ticker}) do Yahoo Finance...")
-        df, nome_ativo, setor, industria = dsa_extrai_dados(ticker)
+        df, nome_ativo, setor, industria = rmta_extrai_dados(ticker)
         print(f"Dados baixados com sucesso. Total de {len(df)} registros.")
         
         # O restante do código permanece igual
@@ -643,7 +643,7 @@ def main():
         print("ETAPA 2: ENGENHARIA DE ATRIBUTOS")
         print("="*50)
         print("Realizando engenharia de atributos...")
-        df = dsa_func_engenharia_atributos(df)
+        df = rmta_func_engenharia_atributos(df)
         print(f"Engenharia de atributos concluída. Novas colunas: {list(df.columns)}")
         
         # Divisão dos dados
@@ -692,9 +692,9 @@ def main():
         print("="*50)
         print("Ajustando o formato dos dados para o modelo...")
         lag = 15
-        x_treino_final, y_treino_final = dsa_ajusta_formato_dados(x_treino_sc, y_treino.values, lag)
-        x_valid_final, y_valid_final = dsa_ajusta_formato_dados(x_valid_sc, y_valid.values, lag)
-        x_teste_final, y_teste_final = dsa_ajusta_formato_dados(x_teste_sc, y_teste.values, lag)
+        x_treino_final, y_treino_final = rmta_ajusta_formato_dados(x_treino_sc, y_treino.values, lag)
+        x_valid_final, y_valid_final = rmta_ajusta_formato_dados(x_valid_sc, y_valid.values, lag)
+        x_teste_final, y_teste_final = rmta_ajusta_formato_dados(x_teste_sc, y_teste.values, lag)
         
         print(f"Shape dos dados de treino: {x_treino_final.shape}")
         print(f"Shape dos dados de validação: {x_valid_final.shape}")
@@ -706,7 +706,7 @@ def main():
         print("="*50)
         print("Criando o modelo Temporal Fusion Transformer aprimorado...")
         input_shape = x_treino_final.shape[1:]
-        modelo_dsa = dsa_cria_modelo(input_shape,
+        modelo_rmta = rmta_cria_modelo(input_shape,
                                     head_size=32,  # Aumentado
                                     num_heads=4,   # Aumentado
                                     ff_dim=16,     # Aumentado
@@ -715,10 +715,10 @@ def main():
                                     dropout=0.2,   # Ajustado
                                     mlp_dropout=0.3)
         
-        modelo_dsa.compile(loss="mean_squared_error", 
+        modelo_rmta.compile(loss="mean_squared_error", 
                          optimizer=keras.optimizers.Adam(learning_rate=0.001),
                          metrics=["mae"])  # Adicionado métrica MAE
-        modelo_dsa.summary()
+        modelo_rmta.summary()
         
         # Treinamento do modelo com mais épocas
         print("\n" + "="*50)
@@ -730,7 +730,7 @@ def main():
             keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=7, min_lr=0.00005)  # Ajustado
         ]
         
-        history = modelo_dsa.fit(x_treino_final,
+        history = modelo_rmta.fit(x_treino_final,
                                y_treino_final,
                                validation_data=(x_valid_final, y_valid_final),
                                epochs=100,  # Aumentado para 100 épocas
@@ -819,7 +819,7 @@ def main():
         print("ETAPA 9: PREVISÕES E AVALIAÇÃO")
         print("="*50)
         print("Fazendo previsões...")
-        pred = modelo_dsa.predict(x_teste_final, verbose=0)
+        pred = modelo_rmta.predict(x_teste_final, verbose=0)
         
         # Avaliação do modelo
         mse = metrics.mean_squared_error(pred, y_teste_final)
@@ -838,9 +838,9 @@ def main():
         print("ETAPA 10: CÁLCULO DE RETORNOS")
         print("="*50)
         print("Calculando retornos...")
-        y_pred_treino = np.concatenate((np.zeros([lag,1]), modelo_dsa.predict(x_treino_final, verbose=0)), axis=0)
-        y_pred_valid = np.concatenate((np.zeros([lag,1]), modelo_dsa.predict(x_valid_final, verbose=0)), axis=0)
-        y_pred_teste = np.concatenate((np.zeros([lag,1]), modelo_dsa.predict(x_teste_final, verbose=0)), axis=0)
+        y_pred_treino = np.concatenate((np.zeros([lag,1]), modelo_rmta.predict(x_treino_final, verbose=0)), axis=0)
+        y_pred_valid = np.concatenate((np.zeros([lag,1]), modelo_rmta.predict(x_valid_final, verbose=0)), axis=0)
+        y_pred_teste = np.concatenate((np.zeros([lag,1]), modelo_rmta.predict(x_teste_final, verbose=0)), axis=0)
         
         df["prediction"] = np.concatenate((y_pred_treino, y_pred_valid, y_pred_teste), axis=0)
         
@@ -867,7 +867,7 @@ def main():
         print("ETAPA 11: PREVISÕES FUTURAS PARA 3 MESES")
         print("="*50)
         dias_futuros = 90  # Prever os próximos 90 dias (3 meses)
-        df_futuro = gerar_previsoes_futuras(modelo_dsa, df, features_modelo, sc, lag, dias_futuros)
+        df_futuro = gerar_previsoes_futuras(modelo_rmta, df, features_modelo, sc, lag, dias_futuros)
         
         # Criar gráfico de barras para retornos mensais
         print("\n" + "="*50)
@@ -886,7 +886,7 @@ def main():
         print("ETAPA 14: SALVANDO RESULTADOS")
         print("="*50)
         print("Salvando o modelo...")
-        modelo_dsa.save(f'modelo_tft_{ticker}.h5')
+        modelo_rmta.save(f'modelo_tft_{ticker}.h5')
         print(f"Modelo salvo como 'modelo_tft_{ticker}.h5'")
         
         # Salvar os resultados em CSV para análise posterior com explicações
