@@ -22,27 +22,28 @@ try:
     from matplotlib.lines import Line2D
     import matplotlib.dates as mdates
     from matplotlib.ticker import FuncFormatter
-    
+    import mplfinance as mpf  # Adicionado para gráficos de candlestick
+
     # Configurações para caracteres em português
     plt.rcParams['axes.unicode_minus'] = False
     plt.rcParams.update({'font.family': 'DejaVu Sans'})
-    
+
     # Configuração do matplotlib para modo não-interativo
     plt.switch_backend('Agg')
-    
+
     # Suprime avisos
     warnings.filterwarnings("ignore")
-    
+
     print("Todas as bibliotecas importadas com sucesso!")
     print(f"Versão do TensorFlow: {tf.__version__}")
     if tf.__version__.startswith('2'):
         print("Versão compatível do TensorFlow detectada.")
     else:
         print("Aviso: Este código foi testado com TensorFlow 2.x. Sua versão pode não ser compatível.")
-        
+    
 except ImportError as e:
     print(f"Erro ao importar biblioteca: {e}")
-    print("Execute 'pip install ta scikit-learn pandas numpy tensorflow yfinance matplotlib' para instalar as dependências")
+    print("Execute 'pip install ta scikit-learn pandas numpy tensorflow yfinance matplotlib mplfinance' para instalar as dependências")
     sys.exit(1)
 
 # Função corrigida para extrair dados com tratamento de erros para MultiIndex
@@ -397,7 +398,7 @@ def criar_grafico_barras_retorno_mensal(df, split_val, ticker, nome_ativo):
         plt.bar([d - datetime.timedelta(days=bar_width/2) for d in datas], 
                 retornos_mensais_bh.values * 100, 
                 width=bar_width, 
-                label='Buy & Hold', 
+                label='Comprar e Manter', 
                 color='blue', 
                 alpha=0.7)
         
@@ -415,7 +416,7 @@ def criar_grafico_barras_retorno_mensal(df, split_val, ticker, nome_ativo):
         
         ax2.plot(df_teste.index, retorno_acumulado_bh, 
                 color='darkblue', linestyle='--', linewidth=2, 
-                label='Buy & Hold Acumulado')
+                label='Comprar e Manter Acumulado')
         
         ax2.plot(df_teste.index, retorno_acumulado_estrategia, 
                 color='darkgreen', linestyle='--', linewidth=2, 
@@ -442,11 +443,10 @@ def criar_grafico_barras_retorno_mensal(df, split_val, ticker, nome_ativo):
         
         # Adicionar explicação da estratégia
         plt.figtext(0.5, 0.01, 
-                  "ESTRATÉGIA DE NEGOCIAÇÃO DIRECIONAL\n\n"
-                  "Esta estratégia utiliza aprendizado profundo para prever a direção do movimento de preço da ação no próximo dia.\n"
-                  "Quando o modelo prevê um retorno positivo, a estratégia assume uma posição comprada (LONG).\n"
-                  "Quando o modelo prevê um retorno negativo, a estratégia assume uma posição vendida (SHORT).\n"
-                  "O desempenho é medido comparando os retornos acumulados da estratégia com a abordagem passiva de Buy & Hold.",
+                  "COMPARAÇÃO DE ESTRATÉGIAS DE NEGOCIAÇÃO\n\n"
+                  "POSIÇÃO DE LONGO PRAZO: Estratégia de longo prazo que mantém a posição independente de flutuações de curto prazo.\n"
+                  "SWING TRADE: Estratégia que utiliza aprendizado profundo para prever a direção do movimento de preço e opera em ambas direções.\n"
+                  "O desempenho é medido comparando os retornos acumulados das estratégias com a abordagem passiva de Comprar e Manter.",
                   fontsize=10, ha='center', bbox=dict(facecolor='lightyellow', alpha=0.5))
         
         plt.tight_layout(rect=[0, 0.08, 1, 0.95])
@@ -461,7 +461,188 @@ def criar_grafico_barras_retorno_mensal(df, split_val, ticker, nome_ativo):
         traceback.print_exc()
         return False
 
-# Função para criar gráfico detalhado da estratégia
+# Nova função para criar gráfico de candlestick para a estratégia de swing trade
+def criar_grafico_candlestick_swing_trade(df, df_futuro, split_val, ticker, nome_ativo):
+    try:
+        print("Criando gráfico de candlestick para estratégia de swing trade...")
+        
+        # Selecionar os últimos 120 dias para visualização
+        dias_visualizacao = 120
+        df_recente = df.iloc[-dias_visualizacao:].copy()
+        
+        # Preparar dados para o gráfico de candlestick
+        df_ohlc = df_recente[['open', 'high', 'low', 'close']].copy()
+        
+        # Adicionar volume
+        df_ohlc['volume'] = df_recente['volume']
+        
+        # Adicionar médias móveis
+        df_ohlc['SMA15'] = df_recente['SMA 15']
+        df_ohlc['SMA60'] = df_recente['SMA 60']
+        
+        # Criar sinais de compra e venda baseados na previsão
+        sinais = np.sign(df_recente["prediction"].shift(1))
+        compras = pd.Series(np.where(sinais > 0, df_recente['low'] * 0.99, np.nan), index=df_recente.index)
+        vendas = pd.Series(np.where(sinais < 0, df_recente['high'] * 1.01, np.nan), index=df_recente.index)
+        
+        # Adicionar anotações para os sinais
+        apds = [
+            mpf.make_addplot(df_ohlc['SMA15'], color='blue', width=1, label='Média Móvel 15'),
+            mpf.make_addplot(df_ohlc['SMA60'], color='red', width=1, label='Média Móvel 60'),
+            mpf.make_addplot(compras, type='scatter', markersize=100, marker='^', color='green', label='Compra'),
+            mpf.make_addplot(vendas, type='scatter', markersize=100, marker='v', color='red', label='Venda')
+        ]
+        
+        # Configurar estilo do gráfico
+        mc = mpf.make_marketcolors(
+            up='green', down='red',
+            edge='inherit',
+            wick={'up':'green', 'down':'red'},
+            volume='blue'
+        )
+        
+        s = mpf.make_mpf_style(
+            marketcolors=mc,
+            figsize=(15, 10),
+            gridstyle='--',
+            y_on_right=False,
+            volume_alpha=0.5
+        )
+        
+        # Criar figura e salvar
+        fig, axes = mpf.plot(
+            df_ohlc,
+            type='candle',
+            style=s,
+            addplot=apds,
+            volume=True,
+            panel_ratios=(4, 1),
+            title=f'Estratégia de Swing Trade - {nome_ativo}',
+            ylabel='Preço (R$)',
+            ylabel_lower='Volume',
+            returnfig=True
+        )
+        
+        # Adicionar legenda
+        axes[0].legend(loc='upper left')
+        
+        # Adicionar explicação da estratégia
+        fig.text(0.5, 0.01, 
+                "ESTRATÉGIA DE SWING TRADE\n\n"
+                "Esta estratégia utiliza um modelo híbrido LSTM-Transformer-GRU para prever movimentos de curto prazo.\n"
+                "Sinais de COMPRA (triângulos verdes) são gerados quando o modelo prevê um retorno positivo.\n"
+                "Sinais de VENDA (triângulos vermelhos) são gerados quando o modelo prevê um retorno negativo.\n"
+                "O objetivo é capturar movimentos de preço em ambas as direções em períodos de 1-5 dias.",
+                fontsize=10, ha='center', bbox=dict(facecolor='lightyellow', alpha=0.5))
+        
+        plt.tight_layout(rect=[0, 0.08, 1, 0.95])
+        plt.savefig(f'swing_trade_candlestick_{ticker}.png', dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Gráfico salvo como 'swing_trade_candlestick_{ticker}.png'")
+        
+        return True
+    except Exception as e:
+        print(f"Erro ao criar gráfico de candlestick para swing trade: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Nova função para criar gráfico de candlestick para a estratégia de holding position
+def criar_grafico_candlestick_holding(df, df_futuro, split_val, ticker, nome_ativo):
+    try:
+        print("Criando gráfico de candlestick para estratégia de posição de longo prazo...")
+        
+        # Selecionar dados de longo prazo (últimos 2 anos)
+        dias_visualizacao = 252 * 2  # Aproximadamente 2 anos de dias úteis
+        if len(df) > dias_visualizacao:
+            df_longo_prazo = df.iloc[-dias_visualizacao:].copy()
+        else:
+            df_longo_prazo = df.copy()
+        
+        # Preparar dados para o gráfico de candlestick
+        df_ohlc = df_longo_prazo[['open', 'high', 'low', 'close']].copy()
+        
+        # Adicionar volume
+        df_ohlc['volume'] = df_longo_prazo['volume']
+        
+        # Adicionar médias móveis de longo prazo
+        df_ohlc['SMA60'] = df_longo_prazo['SMA 60']
+        df_ohlc['SMA200'] = df_longo_prazo['SMA 200']
+        
+        # Identificar pontos de entrada
+        # Identificar pontos de entrada para estratégia de holding (cruzamento de médias móveis)
+        entradas = pd.Series(np.where((df_longo_prazo['SMA 60'].shift(1) < df_longo_prazo['SMA 200'].shift(1)) & 
+                                     (df_longo_prazo['SMA 60'] > df_longo_prazo['SMA 200']), 
+                                     df_longo_prazo['low'] * 0.99, np.nan), index=df_longo_prazo.index)
+        
+        # Identificar pontos de saída para estratégia de holding
+        saidas = pd.Series(np.where((df_longo_prazo['SMA 60'].shift(1) > df_longo_prazo['SMA 200'].shift(1)) & 
+                               (df_longo_prazo['SMA 60'] < df_longo_prazo['SMA 200']), 
+                               df_longo_prazo['high'] * 1.01, np.nan), index=df_longo_prazo.index)
+        
+        # Adicionar anotações para os sinais
+        apds = [
+            mpf.make_addplot(df_ohlc['SMA60'], color='blue', width=1.5, label='Média Móvel 60'),
+            mpf.make_addplot(df_ohlc['SMA200'], color='red', width=1.5, label='Média Móvel 200'),
+            mpf.make_addplot(entradas, type='scatter', markersize=150, marker='^', color='green', label='Entrada'),
+            mpf.make_addplot(saidas, type='scatter', markersize=150, marker='v', color='red', label='Saída')
+        ]
+        
+        # Configurar estilo do gráfico
+        mc = mpf.make_marketcolors(
+            up='green', down='red',
+            edge='inherit',
+            wick={'up':'green', 'down':'red'},
+            volume='blue'
+        )
+        
+        s = mpf.make_mpf_style(
+            marketcolors=mc,
+            figsize=(15, 10),
+            gridstyle='--',
+            y_on_right=False,
+            volume_alpha=0.5
+        )
+        
+        # Criar figura e salvar
+        fig, axes = mpf.plot(
+            df_ohlc,
+            type='candle',
+            style=s,
+            addplot=apds,
+            volume=True,
+            panel_ratios=(4, 1),
+            title=f'Estratégia de Posição de Longo Prazo - {nome_ativo}',
+            ylabel='Preço (R$)',
+            ylabel_lower='Volume',
+            returnfig=True
+        )
+        
+        # Adicionar legenda
+        axes[0].legend(loc='upper left')
+        
+        # Adicionar explicação da estratégia
+        fig.text(0.5, 0.01, 
+                "ESTRATÉGIA DE POSIÇÃO DE LONGO PRAZO\n\n"
+                "Esta estratégia de longo prazo utiliza o cruzamento de médias móveis para identificar tendências duradouras.\n"
+                "Sinais de ENTRADA (triângulos verdes) são gerados quando a MM 60 cruza para cima a MM 200 (Golden Cross).\n"
+                "Sinais de SAÍDA (triângulos vermelhos) são gerados quando a MM 60 cruza para baixo a MM 200 (Death Cross).\n"
+                "O objetivo é capturar tendências de longo prazo e manter a posição por meses ou anos.",
+                fontsize=10, ha='center', bbox=dict(facecolor='lightyellow', alpha=0.5))
+        
+        plt.tight_layout(rect=[0, 0.08, 1, 0.95])
+        plt.savefig(f'holding_position_candlestick_{ticker}.png', dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Gráfico salvo como 'holding_position_candlestick_{ticker}.png'")
+        
+        return True
+    except Exception as e:
+        print(f"Erro ao criar gráfico de candlestick para posição de longo prazo: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Função para criar gráfico detalhado da estratégia com candlesticks
 def criar_grafico_estrategia(df, df_futuro, split_val, ticker, nome_ativo, setor, industria):
     try:
         print("Criando gráfico detalhado da estratégia...")
@@ -471,7 +652,7 @@ def criar_grafico_estrategia(df, df_futuro, split_val, ticker, nome_ativo, setor
         
         # 1. Gráfico de retorno acumulado
         ax1 = plt.subplot(4, 1, 1)
-        df["retorno"].iloc[split_val:].cumsum().plot(label='Buy & Hold', color='blue', linewidth=2)
+        df["retorno"].iloc[split_val:].cumsum().plot(label='Comprar e Manter', color='blue', linewidth=2)
         df["estrategia"].iloc[split_val:].cumsum().plot(label='Estratégia', color='green', linewidth=2)
         plt.axhline(y=0, color='r', linestyle='-', alpha=0.3)
         plt.xlabel("Data", fontsize=10)
@@ -485,68 +666,109 @@ def criar_grafico_estrategia(df, df_futuro, split_val, ticker, nome_ativo, setor
         estrategia_acumulada = df["estrategia"].iloc[split_val:].cumsum().iloc[-1]
         
         if estrategia_acumulada > retorno_acumulado:
-            plt.annotate(f'Estratégia superou Buy & Hold\nDiferença: {(estrategia_acumulada-retorno_acumulado)*100:.2f}%',
+            plt.annotate(f'Estratégia superou Comprar e Manter\nDiferença: {(estrategia_acumulada-retorno_acumulado)*100:.2f}%',
                         xy=(df.index[split_val+len(df.iloc[split_val:])-1], estrategia_acumulada),
                         xytext=(df.index[split_val+int(len(df.iloc[split_val:])*0.8)], estrategia_acumulada*0.8),
                         arrowprops=dict(facecolor='green', shrink=0.05, width=1.5),
                         fontsize=9)
         else:
-            plt.annotate(f'Buy & Hold superou Estratégia\nDiferença: {(retorno_acumulado-estrategia_acumulada)*100:.2f}%',
+            plt.annotate(f'Comprar e Manter superou Estratégia\nDiferença: {(retorno_acumulado-estrategia_acumulada)*100:.2f}%',
                         xy=(df.index[split_val+len(df.iloc[split_val:])-1], retorno_acumulado),
                         xytext=(df.index[split_val+int(len(df.iloc[split_val:])*0.8)], retorno_acumulado*0.8),
                         arrowprops=dict(facecolor='blue', shrink=0.05, width=1.5),
                         fontsize=9)
         
-        # 2. Gráfico de preço com sinais de compra e venda
+        # 2. Gráfico de preço com candlesticks (últimos 60 dias)
         ax2 = plt.subplot(4, 1, 2)
-        plt.plot(df.index[split_val:], df["close"].iloc[split_val:], label='Preço Real', color='blue', linewidth=2)
+        
+        # Selecionar os últimos 60 dias para visualização
+        ultimos_dias = 60
+        df_recente = df.iloc[-ultimos_dias:].copy()
+        
+        # Plotar candlesticks
+        for i in range(len(df_recente)):
+            date = df_recente.index[i]
+            op, hi, lo, cl = df_recente.iloc[i][['open', 'high', 'low', 'close']]
+            
+            # Determinar cor com base no preço de fechamento vs abertura
+            color = 'green' if cl >= op else 'red'
+            
+            # Plotar corpo do candle
+            ax2.plot([date, date], [op, cl], color=color, linewidth=4)
+            
+            # Plotar sombras
+            ax2.plot([date, date], [lo, hi], color=color, linewidth=1)
         
         # Adicionar sinais de compra e venda
-        sinais = np.sign(df["prediction"].shift(1)).iloc[split_val:]
-        datas_compra = df.index[split_val:][sinais > 0]
-        datas_venda = df.index[split_val:][sinais < 0]
+        sinais = np.sign(df_recente["prediction"].shift(1))
+        datas_compra = df_recente.index[sinais > 0]
+        datas_venda = df_recente.index[sinais < 0]
         
-        plt.scatter(datas_compra, df.loc[datas_compra, "close"], color='green', marker='^', alpha=0.7, s=50, label='Compra')
-        plt.scatter(datas_venda, df.loc[datas_venda, "close"], color='red', marker='v', alpha=0.7, s=50, label='Venda')
+        ax2.scatter(datas_compra, df_recente.loc[datas_compra, "low"] * 0.99, color='green', marker='^', alpha=0.7, s=100, label='Compra')
+        ax2.scatter(datas_venda, df_recente.loc[datas_venda, "high"] * 1.01, color='red', marker='v', alpha=0.7, s=100, label='Venda')
+        
+        # Adicionar médias móveis
+        ax2.plot(df_recente.index, df_recente["SMA 15"], color='blue', linewidth=1, label='MM 15')
+        ax2.plot(df_recente.index, df_recente["SMA 60"], color='orange', linewidth=1, label='MM 60')
         
         plt.xlabel("Data", fontsize=10)
-        plt.ylabel("Preço ($)", fontsize=10)
-        plt.title(f"Preço de {nome_ativo} com Sinais de Negociação", fontsize=14)
+        plt.ylabel("Preço (R$)", fontsize=10)
+        plt.title(f"Candlesticks de {nome_ativo} com Sinais de Negociação", fontsize=14)
         plt.legend(fontsize=10)
         plt.grid(True, alpha=0.3)
         
-        # 3. Gráfico de previsões futuras (3 meses)
+        # 3. Gráfico de previsões futuras (3 meses) com candlesticks
         ax3 = plt.subplot(4, 1, 3)
         
-        # Plotar os últimos 60 dias de dados reais
-        ultimos_dias = 60
-        plt.plot(df.index[-ultimos_dias:], df["close"].iloc[-ultimos_dias:], 
-                label='Preço Histórico', color='blue', linewidth=2)
+        # Plotar os últimos 30 dias de dados reais com candlesticks
+        ultimos_dias_reais = 30
+        df_ultimos = df.iloc[-ultimos_dias_reais:].copy()
         
-        # Plotar as previsões futuras
-        if df_futuro is not None:
-            plt.plot(df_futuro.index, df_futuro["close"], 
-                    label='Previsão Futura (3 meses)', color='orange', linewidth=2, linestyle='--')
+        for i in range(len(df_ultimos)):
+            date = df_ultimos.index[i]
+            op, hi, lo, cl = df_ultimos.iloc[i][['open', 'high', 'low', 'close']]
             
-            # Adicionar intervalo de confiança (simplificado)
-            std_retorno = df["retorno"].std()
-            plt.fill_between(df_futuro.index, 
-                            df_futuro["close"] * (1 - 1.96 * std_retorno), 
-                            df_futuro["close"] * (1 + 1.96 * std_retorno),
-                            color='orange', alpha=0.2, label='Intervalo de Confiança (95%)')
+            # Determinar cor com base no preço de fechamento vs abertura
+            color = 'green' if cl >= op else 'red'
+            
+            # Plotar corpo do candle
+            ax3.plot([date, date], [op, cl], color=color, linewidth=4, alpha=0.7)
+            
+            # Plotar sombras
+            ax3.plot([date, date], [lo, hi], color=color, linewidth=1, alpha=0.7)
+        
+        # Plotar as previsões futuras com candlesticks
+        if df_futuro is not None:
+            for i in range(len(df_futuro)):
+                date = df_futuro.index[i]
+                op, hi, lo, cl = df_futuro.iloc[i][['open', 'high', 'low', 'close']]
+                
+                # Determinar cor com base no preço de fechamento vs abertura
+                color = 'green' if cl >= op else 'red'
+                
+                # Plotar corpo do candle com estilo diferente para indicar que é previsão
+                ax3.plot([date, date], [op, cl], color=color, linewidth=4, alpha=0.4)
+                
+                # Plotar sombras
+                ax3.plot([date, date], [lo, hi], color=color, linewidth=1, alpha=0.4)
+            
+            # Adicionar linha vertical para separar dados reais de previsões
+            ax3.axvline(x=df.index[-1], color='black', linestyle='--', alpha=0.5)
+            ax3.text(df.index[-1], df['close'].iloc[-1]*1.05, 'Início das Previsões', 
+                    fontsize=9, ha='right', rotation=90, alpha=0.7)
             
             # Adicionar sinais de compra e venda nas previsões
             sinais_futuros = np.sign(df_futuro["retorno"])
             datas_compra_futuro = df_futuro.index[sinais_futuros > 0]
             datas_venda_futuro = df_futuro.index[sinais_futuros < 0]
             
-            plt.scatter(datas_compra_futuro, df_futuro.loc[datas_compra_futuro, "close"], 
-                       color='green', marker='^', alpha=0.7, s=50, label='Sinal Compra Futuro')
-            plt.scatter(datas_venda_futuro, df_futuro.loc[datas_venda_futuro, "close"], 
-                        color='red', marker='v', alpha=0.7, s=50, label='Sinal Venda Futuro')
+            ax3.scatter(datas_compra_futuro, df_futuro.loc[datas_compra_futuro, "low"] * 0.99, 
+                       color='green', marker='^', alpha=0.7, s=80, label='Sinal Compra Futuro')
+            ax3.scatter(datas_venda_futuro, df_futuro.loc[datas_venda_futuro, "high"] * 1.01, 
+                        color='red', marker='v', alpha=0.7, s=80, label='Sinal Venda Futuro')
         
         plt.xlabel("Data", fontsize=10)
-        plt.ylabel("Preço ($)", fontsize=10)
+        plt.ylabel("Preço (R$)", fontsize=10)
         plt.title(f"Previsão de Preços Futuros para {nome_ativo} (3 meses)", fontsize=14)
         plt.legend(fontsize=10)
         plt.grid(True, alpha=0.3)
@@ -586,19 +808,17 @@ def criar_grafico_estrategia(df, df_futuro, split_val, ticker, nome_ativo, setor
         
         # Adicionar explicação detalhada da estratégia
         plt.figtext(0.5, 0.01, 
-                  "ESTRATÉGIA DE NEGOCIAÇÃO DIRECIONAL COM APRENDIZADO PROFUNDO\n\n"
-                  f"Esta estratégia utiliza um modelo híbrido LSTM-Transformer-GRU para prever a direção do movimento de preço de {nome_ativo} ({ticker}).\n"
+                  "ESTRATÉGIAS DE NEGOCIAÇÃO PARA VALE S.A.\n\n"
+                  f"Este gráfico compara duas estratégias de negociação para {nome_ativo} ({ticker}):\n"
                   f"Setor: {setor} | Indústria: {industria}\n\n"
-                  "FUNCIONAMENTO DA ESTRATÉGIA:\n"
-                  "1. O modelo analisa 15 dias de histórico de preços e indicadores técnicos para prever o retorno do próximo dia.\n"
-                  "2. Quando o modelo prevê um retorno positivo, a estratégia assume uma posição comprada (LONG).\n"
-                  "3. Quando o modelo prevê um retorno negativo, a estratégia assume uma posição vendida (SHORT).\n"
-                  "4. As posições são ajustadas diariamente com base nas novas previsões do modelo.\n\n"
-                  "VANTAGENS DESTA ABORDAGEM:\n"
-                  "• Captura movimentos em ambas as direções do mercado (alta e baixa)\n"
-                  "• Adapta-se a diferentes condições de mercado através do aprendizado profundo\n"
-                  "• Utiliza múltiplos indicadores técnicos para identificar padrões complexos\n"
-                  "• Fornece previsões de preço para os próximos 3 meses para planejamento de longo prazo",
+                  "SWING TRADE (Curto Prazo):\n"
+                  "• Utiliza modelo híbrido LSTM-Transformer-GRU para prever movimentos diários\n"
+                  "• Opera em ambas direções (compra e venda) baseado nas previsões do modelo\n"
+                  "• Ideal para capturar movimentos de curto prazo (1-5 dias)\n\n"
+                  "POSIÇÃO DE LONGO PRAZO (Longo Prazo):\n"
+                  "• Baseada em cruzamentos de médias móveis (MM 60 e MM 200)\n"
+                  "• Mantém posições por períodos prolongados, ignorando ruídos de curto prazo\n"
+                  "• Ideal para investidores com horizonte de tempo mais longo (meses ou anos)",
                   fontsize=10, ha='center', bbox=dict(facecolor='lightyellow', alpha=0.5))
         
         plt.tight_layout(rect=[0, 0.08, 1, 0.98])
@@ -613,7 +833,819 @@ def criar_grafico_estrategia(df, df_futuro, split_val, ticker, nome_ativo, setor
         traceback.print_exc()
         return False
 
-# Função principal que executa todo o processo
+# Nova função para criar gráfico de candlestick para a estratégia de scalping
+def criar_grafico_candlestick_scalping(df, df_futuro, ticker, nome_ativo):
+    try:
+        print("Criando gráfico de candlestick para estratégia de scalping...")
+        
+        # Selecionar os últimos 30 dias para visualização (foco em curto prazo para scalping)
+        dias_visualizacao = 30
+        df_recente = df.iloc[-dias_visualizacao:].copy()
+        
+        # Preparar dados para o gráfico de candlestick
+        df_ohlc = df_recente[['open', 'high', 'low', 'close']].copy()
+        
+        # Adicionar volume
+        df_ohlc['volume'] = df_recente['volume']
+        
+        # Adicionar médias móveis curtas (mais relevantes para scalping)
+        df_ohlc['SMA5'] = df_recente['close'].rolling(5).mean()
+        df_ohlc['SMA10'] = df_recente['close'].rolling(10).mean()
+        
+        # Identificar pontos de entrada para scalping baseados em cruzamento de médias curtas
+        # e confirmação de RSI
+        entradas = []
+        stops = []
+        alvos = []
+        
+        # Criar sinais de scalping baseados em cruzamento de médias e RSI
+        for i in range(5, len(df_recente)-1):
+            # Condição de entrada: SMA5 cruza acima da SMA10 e RSI > 50 (para compra)
+            if (df_recente['SMA 15'].iloc[i-1] < df_recente['close'].rolling(10).mean().iloc[i-1] and 
+                df_recente['SMA 15'].iloc[i] > df_recente['close'].rolling(10).mean().iloc[i] and 
+                df_recente['RSI'].iloc[i] > 50):
+                
+                # Ponto de entrada
+                entrada = df_recente['close'].iloc[i]
+                entradas.append((df_recente.index[i], entrada))
+                
+                # Stop loss (1% abaixo do ponto de entrada)
+                stop = entrada * 0.99
+                stops.append((df_recente.index[i], stop))
+                
+                # Alvo (pelo menos 2x a distância do stop - relação 2:1)
+                alvo = entrada + (entrada - stop) * 2
+                alvos.append((df_recente.index[i], alvo))
+        
+        # Criar séries para plotagem
+        entradas_x = [x[0] for x in entradas]
+        entradas_y = [x[1] for x in entradas]
+        
+        stops_x = [x[0] for x in stops]
+        stops_y = [x[1] for x in stops]
+        
+        alvos_x = [x[0] for x in alvos]
+        alvos_y = [x[1] for x in alvos]
+        
+        # Preparar dados para mplfinance
+        entradas_series = pd.Series(np.nan, index=df_recente.index)
+        stops_series = pd.Series(np.nan, index=df_recente.index)
+        alvos_series = pd.Series(np.nan, index=df_recente.index)
+        
+        for i, idx in enumerate(entradas_x):
+            entradas_series.loc[idx] = entradas_y[i]
+            stops_series.loc[idx] = stops_y[i]
+            alvos_series.loc[idx] = alvos_y[i]
+        
+        # Adicionar anotações para os sinais
+        apds = [
+            mpf.make_addplot(df_ohlc['SMA5'], color='blue', width=1, label='Média Móvel 5'),
+            mpf.make_addplot(df_ohlc['SMA10'], color='red', width=1, label='Média Móvel 10'),
+            mpf.make_addplot(entradas_series, type='scatter', markersize=100, marker='^', color='green', label='Entrada'),
+            mpf.make_addplot(stops_series, type='scatter', markersize=80, marker='_', color='red', label='Stop Loss'),
+            mpf.make_addplot(alvos_series, type='scatter', markersize=80, marker='_', color='blue', label='Alvo (2:1)')
+        ]
+        
+        # Configurar estilo do gráfico
+        mc = mpf.make_marketcolors(
+            up='green', down='red',
+            edge='inherit',
+            wick={'up':'green', 'down':'red'},
+            volume='blue'
+        )
+        
+        s = mpf.make_mpf_style(
+            marketcolors=mc,
+            figsize=(15, 10),
+            gridstyle='--',
+            y_on_right=False,
+            volume_alpha=0.5
+        )
+        
+        # Criar figura e salvar
+        fig, axes = mpf.plot(
+            df_ohlc,
+            type='candle',
+            style=s,
+            addplot=apds,
+            volume=True,
+            panel_ratios=(4, 1),
+            title=f'Estratégia de Scalping - {nome_ativo}',
+            ylabel='Preço (R$)',
+            ylabel_lower='Volume',
+            returnfig=True
+        )
+        
+        # Adicionar legenda
+        axes[0].legend(loc='upper left')
+        
+        plt.tight_layout()
+        plt.savefig(f'scalping_candlestick_{ticker}.png', dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Gráfico salvo como 'scalping_candlestick_{ticker}.png'")
+        
+        # Criar imagem explicativa separada para a estratégia de scalping
+        criar_imagem_explicativa_scalping(ticker)
+        
+        return True
+    except Exception as e:
+        print(f"Erro ao criar gráfico de candlestick para scalping: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Função para criar imagem explicativa da estratégia de scalping
+def criar_imagem_explicativa_scalping(ticker):
+    try:
+        print("Criando imagem explicativa para estratégia de scalping...")
+        
+        # Criar figura
+        fig = plt.figure(figsize=(12, 8))
+        
+        # Adicionar texto explicativo
+        plt.text(0.5, 0.95, "ESTRATÉGIA DE SCALPING", fontsize=20, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.85, 
+                "O que é Scalping?", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.78, 
+                "Scalping é uma estratégia de negociação de curtíssimo prazo que busca\n"
+                "capturar pequenos movimentos de preço, muitas vezes em questão de minutos ou horas.\n"
+                "O objetivo é realizar muitas operações com ganhos pequenos, mas consistentes.",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.65, 
+                "Como funciona nossa estratégia de Scalping:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.58, 
+                "1. ENTRADA: Quando a média móvel de 5 períodos cruza acima da média de 10 períodos\n"
+                "   e o RSI está acima de 50, indicando momentum positivo.\n\n"
+                "2. STOP LOSS: Posicionado 1% abaixo do preço de entrada para limitar perdas.\n\n"
+                "3. ALVO DE LUCRO: Definido com relação risco:retorno de pelo menos 2:1,\n"
+                "   ou seja, se o risco é de 1%, o alvo será de pelo menos 2%.",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.35, 
+                "Vantagens do Scalping:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.28, 
+                "• Exposição reduzida ao risco de mercado\n"
+                "• Não mantém posições durante a noite\n"
+                "• Potencial para ganhos consistentes em pequenos movimentos\n"
+                "• Menos afetado por notícias e eventos de longo prazo",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.15, 
+                "Desvantagens do Scalping:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.08, 
+                "• Requer atenção constante e tomada de decisão rápida\n"
+                "• Custos de transação podem impactar significativamente os resultados\n"
+                "• Exige disciplina rigorosa para seguir as regras de entrada e saída\n"
+                "• Pode ser estressante devido ao ritmo acelerado das operações",
+                fontsize=14, ha='center')
+        
+        # Remover eixos
+        plt.axis('off')
+        
+        # Adicionar borda
+        plt.gca().spines['top'].set_visible(True)
+        plt.gca().spines['right'].set_visible(True)
+        plt.gca().spines['bottom'].set_visible(True)
+        plt.gca().spines['left'].set_visible(True)
+        
+        # Salvar figura
+        plt.savefig(f'explicacao_scalping_{ticker}.png', dpi=300, bbox_inches='tight', facecolor='lightyellow')
+        plt.close()
+        print(f"Imagem explicativa salva como 'explicacao_scalping_{ticker}.png'")
+        
+        return True
+    except Exception as e:
+        print(f"Erro ao criar imagem explicativa para scalping: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Função para criar imagens explicativas para as outras estratégias
+def criar_imagens_explicativas(ticker):
+    try:
+        print("Criando imagens explicativas para as estratégias...")
+        
+        # Imagem explicativa para Swing Trade
+        fig = plt.figure(figsize=(12, 8))
+        
+        plt.text(0.5, 0.95, "ESTRATÉGIA DE SWING TRADE", fontsize=20, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.85, 
+                "O que é Swing Trade?", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.78, 
+                "Swing Trade é uma estratégia de negociação de curto a médio prazo que busca\n"
+                "capturar movimentos de preço que duram de alguns dias a algumas semanas.\n"
+                "O objetivo é aproveitar oscilações (swings) do mercado.",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.65, 
+                "Como funciona nossa estratégia de Swing Trade:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.58, 
+                "1. ENTRADA: Baseada nas previsões do modelo híbrido LSTM-Transformer-GRU\n"
+                "   que analisa padrões complexos nos dados e prevê a direção do movimento.\n\n"
+                "2. DIREÇÃO: Opera em ambas direções (compra e venda) conforme as previsões.\n\n"
+                "3. PERÍODO: Ideal para operações com duração de 1 a 5 dias.",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.35, 
+                "Vantagens do Swing Trade:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.28, 
+                "• Menos estressante que day trade ou scalping\n"
+                "• Requer menos tempo de monitoramento constante\n"
+                "• Potencial para capturar movimentos maiores que o scalping\n"
+                "• Menor impacto dos custos de transação",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.15, 
+                "Desvantagens do Swing Trade:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.08, 
+                "• Exposição ao risco overnight\n"
+                "• Vulnerabilidade a gaps e notícias inesperadas\n"
+                "• Pode exigir maior capital para suportar volatilidade\n"
+                "• Menor número de oportunidades comparado ao scalping",
+                fontsize=14, ha='center')
+        
+        plt.axis('off')
+        plt.savefig(f'explicacao_swing_trade_{ticker}.png', dpi=300, bbox_inches='tight', facecolor='lightyellow')
+        plt.close()
+        
+        # Imagem explicativa para Holding Position
+        fig = plt.figure(figsize=(12, 8))
+        
+        plt.text(0.5, 0.95, "ESTRATÉGIA DE POSIÇÃO DE LONGO PRAZO", fontsize=20, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.85, 
+                "O que é Posição de Longo Prazo?", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.78, 
+                "A estratégia de posição de longo prazo (holding) consiste em manter um ativo\n"
+                "por períodos prolongados, geralmente meses ou anos, ignorando flutuações de curto prazo\n"
+                "e focando nas tendências fundamentais de longo prazo.",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.65, 
+                "Como funciona nossa estratégia de Posição de Longo Prazo:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.58, 
+                "1. ENTRADA: Baseada no cruzamento da média móvel de 60 períodos acima da média de 200 períodos\n"
+                "   (Golden Cross), indicando início de tendência de alta de longo prazo.\n\n"
+                "2. SAÍDA: Quando a média de 60 períodos cruza abaixo da média de 200 períodos\n"
+                "   (Death Cross), sinalizando possível reversão da tendência de alta.\n\n"
+                "3. PERÍODO: Ideal para investidores com horizonte de tempo de meses ou anos.",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.35, 
+                "Vantagens da Posição de Longo Prazo:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.28, 
+                "• Menor necessidade de monitoramento constante\n"
+                "• Menor impacto dos custos de transação\n"
+                "• Potencial para capturar grandes movimentos de tendência\n"
+                "• Menos afetado por ruídos e volatilidade de curto prazo",
+                fontsize=14, ha='center')
+        
+        plt.text(0.5, 0.15, 
+                "Desvantagens da Posição de Longo Prazo:", 
+                fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.08, 
+                "• Capital fica comprometido por períodos mais longos\n"
+                "• Exposição a riscos fundamentais e macroeconômicos\n"
+                "• Pode perder oportunidades de curto prazo\n"
+                "• Requer maior tolerância a drawdowns temporários",
+                fontsize=14, ha='center')
+        
+        plt.axis('off')
+        plt.savefig(f'explicacao_holding_{ticker}.png', dpi=300, bbox_inches='tight', facecolor='lightyellow')
+        plt.close()
+        
+        print(f"Imagens explicativas salvas como 'explicacao_swing_trade_{ticker}.png' e 'explicacao_holding_{ticker}.png'")
+        
+        return True
+    except Exception as e:
+        print(f"Erro ao criar imagens explicativas: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Função para criar relatório com recomendações do modelo
+# def criar_relatorio_recomendacoes(df, df_futuro, ticker, nome_ativo, mse, rmse, mae, r2):
+#     try:
+#         print("Criando relatório com recomendações do modelo...")
+        
+#         # Criar figura para o relatório
+#         fig = plt.figure(figsize=(12, 16))
+        
+#         # Título
+#         plt.text(0.5, 0.98, f"RELATÓRIO DE RECOMENDAÇÕES PARA {nome_ativo} ({ticker})", 
+#                 fontsize=20, ha='center', weight='bold')
+        
+#         # Data do relatório
+#         plt.text(0.5, 0.95, f"Gerado em: {datetime.datetime.now().strftime('%d/%m/%Y')}", 
+#                 fontsize=14, ha='center')
+        
+#         # Métricas do modelo
+#         plt.text(0.5, 0.91, "PRECISÃO DO MODELO:", fontsize=16, ha='center', weight='bold')
+        
+#         plt.text(0.5, 0.88, 
+#                 f"Erro Quadrático Médio (MSE): {mse:.6f}\n"
+#                 f"Raiz do Erro Quadrático Médio (RMSE): {rmse:.6f}\n"
+#                 f"Erro Absoluto Médio (MAE): {mae:.6f}\n"
+#                 f"Coeficiente de Determinação (R²): {r2:.6f}",
+#                 fontsize=14, ha='center')
+        
+#         # Interpretação da precisão
+#         precisao_percentual = (1 - mae) * 100 if mae < 1 else 0
+#         plt.text(0.5, 0.83, 
+#                 f"Precisão estimada do modelo: {precisao_percentual:.2f}%\n"
+#                 f"Margem de erro: ±{mae*100:.2f}%",
+#                 fontsize=14, ha='center', color='blue')
+        
+#         # Linha divisória
+#         plt.axhline(y=0.80, color='gray', linestyle='-', alpha=0.3)
+        
+#         # Recomendações para Scalping (próximo dia)
+#         plt.text(0.5, 0.77, "RECOMENDAÇÕES PARA SCALPING (PRÓXIMO DIA):", 
+#                 fontsize=16, ha='center', weight='bold')
+        
+#         # Obter previsão para o próximo dia
+#         if df_futuro is not None and len(df_futuro) > 0:
+#             prox_dia_retorno = df_futuro['retorno'].iloc[0]
+#             prox_dia_preco = df_futuro['close'].iloc[0]
+#             prox_dia_data = df_futuro.index[0].strftime('%d/%m/%Y')
+            
+#             if prox_dia_retorno > 0:
+#                 recomendacao_scalp = "COMPRA"
+#                 cor_scalp = "green"
+#                 stop_loss = prox_dia_preco * 0.99
+#                 alvo = prox_dia_preco + (prox_dia_preco - stop_loss) * 2
+#             else:
+#                 recomendacao_scalp = "VENDA"
+#                 cor_scalp = "red"
+#                 stop_loss = prox_dia_preco * 1.01
+#                 alvo = prox_dia_preco - (stop_loss - prox_dia_preco) * 2
+            
+#             plt.text(0.5, 0.73, 
+#                     f"Data: {prox_dia_data}\n"
+#                     f"Preço previsto: R$ {prox_dia_preco:.2f}\n"
+#                     f"Retorno previsto: {prox_dia_retorno*100:.2f}%\n"
+#                     f"Recomendação: {recomendacao_scalp}",
+#                     fontsize=14, ha='center', color=cor_scalp)
+            
+#             plt.text(0.5, 0.67, 
+#                     f"Ponto de entrada: R$ {prox_dia_preco:.2f}\n"
+#                     f"Stop loss: R$ {stop_loss:.2f} ({(stop_loss/prox_dia_preco-1)*100:.2f}%)\n"
+#                     f"Alvo: R$ {alvo:.2f} ({(alvo/prox_dia_preco-1)*100:.2f}%)\n"
+#                     f"Relação risco:retorno: 1:2",
+#                     fontsize=14, ha='center')
+#         else:
+#             plt.text(0.5, 0.73, "Dados insuficientes para previsão de scalping", 
+#                     fontsize=14, ha='center', color='gray')
+        
+#         # Linha divisória
+#         plt.axhline(y=0.64, color='gray', linestyle='-', alpha=0.3)
+        
+#         # Recomendações para Swing Trade (próxima semana)
+#         plt.text(0.5, 0.61, "RECOMENDAÇÕES PARA SWING TRADE (PRÓXIMA SEMANA):", 
+#                 fontsize=16, ha='center', weight='bold')
+        
+#         # Obter previsão para a próxima semana (5 dias úteis)
+#         if df_futuro is not None and len(df_futuro) >= 5:
+#             semana_retorno = df_futuro['retorno'].iloc[:5].sum()
+#             semana_preco_final = df_futuro['close'].iloc[4]
+#             semana_data_final = df_futuro.index[4].strftime('%d/%m/%Y')
+            
+#             if semana_retorno > 0:
+#                 recomendacao_swing = "COMPRA"
+#                 cor_swing = "green"
+#             else:
+#                 recomendacao_swing = "VENDA"
+#                 cor_swing = "red"
+            
+#             plt.text(0.5, 0.57, 
+#                     f"Período: {df_futuro.index[0].strftime('%d/%m/%Y')} a {semana_data_final}\n"
+#                     f"Preço final previsto: R$ {semana_preco_final:.2f}\n"
+#                     f"Retorno acumulado previsto: {semana_retorno*100:.2f}%\n"
+#                     f"Recomendação: {recomendacao_swing}",
+#                     fontsize=14, ha='center', color=cor_swing)
+            
+#             # Adicionar detalhes dos dias da semana
+#             dias_semana = []
+#             for i in range(min(5, len(df_futuro))):
+#                 dia = df_futuro.index[i].strftime('%d/%m')
+#                 retorno = df_futuro['retorno'].iloc[i] * 100
+#                 dias_semana.append(f"{dia}: {retorno:+.2f}%")
+            
+#             plt.text(0.5, 0.51, 
+#                     "Previsão diária:\n" + "\n".join(dias_semana),
+#                     fontsize=12, ha='center')
+#         else:
+#             plt.text(0.5, 0.57, "Dados insuficientes para previsão de swing trade", 
+#                     fontsize=14, ha='center', color='gray')
+        
+#         # Linha divisória
+#         plt.axhline(y=0.48, color='gray', linestyle='-', alpha=0.3)
+        
+#         # Recomendações para Holding (próximo ano)
+#         plt.text(0.5, 0.45, "RECOMENDAÇÕES PARA POSIÇÃO DE LONGO PRAZO (PRÓXIMO ANO):", 
+#                 fontsize=16, ha='center', weight='bold')
+        
+#         # Calcular tendência de longo prazo baseada nas médias móveis
+#         ultimo_preco = df['close'].iloc[-1]
+#         sma60 = df['SMA 60'].iloc[-1]
+#         sma200 = df['SMA 200'].iloc[-1]
+        
+#         if sma60 > sma200:
+#             tendencia = "ALTA"
+#             recomendacao_holding = "COMPRA"
+#             cor_holding = "green"
+#         else:
+#             tendencia = "BAIXA"
+#             recomendacao_holding = "VENDA/AGUARDE"
+#             cor_holding = "red"
+        
+#         # Projetar retorno anual baseado nas previsões disponíveis
+#         if df_futuro is not None and len(df_futuro) > 0:
+#             # Usar a média diária para projetar o ano
+#             retorno_medio_diario = df_futuro['retorno'].mean()
+#             retorno_anual_projetado = ((1 + retorno_medio_diario) ** 252) - 1
+#             preco_anual_projetado = ultimo_preco * (1 + retorno_anual_projetado)
+            
+#             plt.text(0.5, 0.41, 
+#                     f"Tendência atual: {tendencia}\n"
+#                     f"Preço atual: R$ {ultimo_preco:.2f}\n"
+#                     f"Preço projetado (1 ano): R$ {preco_anual_projetado:.2f}\n"
+#                     f"Retorno anual projetado: {retorno_anual_projetado*100:.2f}%\n"
+#                     f"Recomendação: {recomendacao_holding}",
+#                     fontsize=14, ha='center', color=cor_holding)
+            
+#             # Adicionar análise técnica de longo prazo
+#             plt.text(0.5, 0.34, 
+#                     f"Análise técnica de longo prazo:\n"
+#                     f"• Média Móvel 60 dias: R$ {sma60:.2f}\n"
+#                     f"• Média Móvel 200 dias: R$ {sma200:.2f}\n"
+#                     f"• Diferença entre médias: {(sma60/sma200-1)*100:+.2f}%",
+#                     fontsize=14, ha='center')
+#         else:
+#             plt.text(0.5, 0.41, "Dados insuficientes para projeção de longo prazo", 
+#                     fontsize=14, ha='center', color='gray')
+        
+#         # Linha divisória
+#         plt.axhline(y=0.30, color='gray', linestyle='-', alpha=0.3)
+        
+#         # Resumo das recomendações
+#         plt.text(0.5, 0.27, "RESUMO DAS RECOMENDAÇÕES:", fontsize=16, ha='center', weight='bold')
+        
+#         plt.text(0.5, 0.23, 
+#                 f"Scalping (1 dia): {recomendacao_scalp if 'recomendacao_scalp' in locals() else 'N/A'}\n"
+#                 f"Swing Trade (1 semana): {recomendacao_swing if 'recomendacao_swing' in locals() else 'N/A'}\n"
+#                 f"Posição de Longo Prazo (1 ano): {recomendacao_holding}",
+#                 fontsize=14, ha='center')
+        
+#         # Aviso importante
+#         plt.text(0.5, 0.15, "AVISO IMPORTANTE:", fontsize=14, ha='center', weight='bold', color='red')
+        
+#         plt.text(0.5, 0.10, 
+#                 "Este relatório é baseado em modelos matemáticos e análise técnica.\n"
+#                 "Resultados passados não garantem retornos futuros.\n"
+#                 "Sempre faça sua própria análise e considere seu perfil de risco\n"
+#                 "antes de tomar decisões de investimento.",
+#                 fontsize=12, ha='center', style='italic')
+        
+#         # Rodapé
+#         plt.text(0.5, 0.03, 
+#                 f"Análise gerada por modelo híbrido LSTM-Transformer-GRU\n"
+#                 f"Precisão estimada: {precisao_percentual:.2f}%",
+#                 fontsize=10, ha='center', color='gray')
+        
+#         # Remover eixos
+#         plt.axis('off')
+        
+#         # Adicionar borda
+#         plt.gca().spines['top'].set_visible(True)
+#         plt.gca().spines['right'].set_visible(True)
+#         plt.gca().spines['bottom'].set_visible(True)
+#         plt.gca().spines['left'].set_visible(True)
+        
+#         # Salvar figura
+#         plt.savefig(f'relatorio_recomendacoes_{ticker}.png', dpi=300, bbox_inches='tight', facecolor='white')
+#         plt.close()
+#         print(f"Relatório de recomendações salvo como 'relatorio_recomendacoes_{ticker}.png'")
+        
+#         return True
+#     except Exception as e:
+#         print(f"Erro ao criar relatório de recomendações: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         return False
+# Modificação na função criar_relatorio_recomendacoes
+def criar_relatorio_recomendacoes(df, df_futuro, ticker, nome_ativo, mse, rmse, mae, r2):
+    try:
+        print("Criando relatório com recomendações do modelo...")
+        
+        # Criar figura para o relatório com mais espaço vertical
+        fig = plt.figure(figsize=(12, 18))  # Aumentei a altura de 16 para 18
+        
+        # Título
+        plt.text(0.5, 0.98, f"RELATÓRIO DE RECOMENDAÇÕES PARA {nome_ativo} ({ticker})", 
+                fontsize=20, ha='center', weight='bold')
+        
+        # Data do relatório
+        plt.text(0.5, 0.95, f"Gerado em: {datetime.datetime.now().strftime('%d/%m/%Y')}", 
+                fontsize=14, ha='center')
+        
+        # Métricas do modelo
+        plt.text(0.5, 0.91, "PRECISÃO DO MODELO:", fontsize=16, ha='center', weight='bold')
+        
+        plt.text(0.5, 0.88, 
+                f"Erro Quadrático Médio (MSE): {mse:.6f}\n"
+                f"Raiz do Erro Quadrático Médio (RMSE): {rmse:.6f}\n"
+                f"Erro Absoluto Médio (MAE): {mae:.6f}\n"
+                f"Coeficiente de Determinação (R²): {r2:.6f}",
+                fontsize=14, ha='center')
+        
+        # Interpretação da precisão
+        precisao_percentual = (1 - mae) * 100 if mae < 1 else 0
+        plt.text(0.5, 0.83, 
+                f"Precisão estimada do modelo: {precisao_percentual:.2f}%\n"
+                f"Margem de erro: ±{mae*100:.2f}%",
+                fontsize=14, ha='center', color='blue')
+        
+        # Linha divisória
+        plt.axhline(y=0.80, color='gray', linestyle='-', alpha=0.3)
+        
+        # Recomendações para Scalping (próximo dia)
+        plt.text(0.5, 0.77, "RECOMENDAÇÕES PARA SCALPING (PRÓXIMO DIA):", 
+                fontsize=16, ha='center', weight='bold')
+        
+        # Obter previsão para o próximo dia - SEMPRE USAR DADOS DISPONÍVEIS
+        if df_futuro is not None and len(df_futuro) > 0:
+            prox_dia_retorno = df_futuro['retorno'].iloc[0]
+            prox_dia_preco = df_futuro['close'].iloc[0]
+            prox_dia_data = df_futuro.index[0].strftime('%d/%m/%Y')
+            
+            if prox_dia_retorno > 0:
+                recomendacao_scalp = "COMPRA"
+                cor_scalp = "green"
+                stop_loss = prox_dia_preco * 0.99
+                alvo = prox_dia_preco + (prox_dia_preco - stop_loss) * 2
+            else:
+                recomendacao_scalp = "VENDA"
+                cor_scalp = "red"
+                stop_loss = prox_dia_preco * 1.01
+                alvo = prox_dia_preco - (stop_loss - prox_dia_preco) * 2
+            
+            plt.text(0.5, 0.73, 
+                    f"Data: {prox_dia_data}\n"
+                    f"Preço previsto: R$ {prox_dia_preco:.2f}\n"
+                    f"Retorno previsto: {prox_dia_retorno*100:.2f}%\n"
+                    f"Recomendação: {recomendacao_scalp}",
+                    fontsize=14, ha='center', color=cor_scalp)
+            
+            plt.text(0.5, 0.67, 
+                    f"Ponto de entrada: R$ {prox_dia_preco:.2f}\n"
+                    f"Stop loss: R$ {stop_loss:.2f} ({(stop_loss/prox_dia_preco-1)*100:.2f}%)\n"
+                    f"Alvo: R$ {alvo:.2f} ({(alvo/prox_dia_preco-1)*100:.2f}%)\n"
+                    f"Relação risco:retorno: 1:2",
+                    fontsize=14, ha='center')
+        else:
+            # Usar dados históricos recentes se não houver previsões futuras
+            ultimo_dia = df.iloc[-1]
+            ultimo_dia_retorno = ultimo_dia['retorno']
+            ultimo_dia_preco = ultimo_dia['close']
+            ultimo_dia_data = df.index[-1].strftime('%d/%m/%Y')
+            
+            if ultimo_dia_retorno > 0:
+                recomendacao_scalp = "COMPRA"
+                cor_scalp = "green"
+                stop_loss = ultimo_dia_preco * 0.99
+                alvo = ultimo_dia_preco + (ultimo_dia_preco - stop_loss) * 2
+            else:
+                recomendacao_scalp = "VENDA"
+                cor_scalp = "red"
+                stop_loss = ultimo_dia_preco * 1.01
+                alvo = ultimo_dia_preco - (stop_loss - ultimo_dia_preco) * 2
+            
+            plt.text(0.5, 0.73, 
+                    f"Data: {ultimo_dia_data} (último dia disponível)\n"
+                    f"Preço atual: R$ {ultimo_dia_preco:.2f}\n"
+                    f"Retorno recente: {ultimo_dia_retorno*100:.2f}%\n"
+                    f"Recomendação: {recomendacao_scalp}",
+                    fontsize=14, ha='center', color=cor_scalp)
+            
+            plt.text(0.5, 0.67, 
+                    f"Ponto de entrada: R$ {ultimo_dia_preco:.2f}\n"
+                    f"Stop loss: R$ {stop_loss:.2f} ({(stop_loss/ultimo_dia_preco-1)*100:.2f}%)\n"
+                    f"Alvo: R$ {alvo:.2f} ({(alvo/ultimo_dia_preco-1)*100:.2f}%)\n"
+                    f"Relação risco:retorno: 1:2",
+                    fontsize=14, ha='center')
+        
+        # Linha divisória - AUMENTAR ESPAÇAMENTO VERTICAL
+        plt.axhline(y=0.63, color='gray', linestyle='-', alpha=0.3)  # Ajustado de 0.64 para 0.63
+        
+        # Recomendações para Swing Trade (próxima semana)
+        plt.text(0.5, 0.60, "RECOMENDAÇÕES PARA SWING TRADE (PRÓXIMA SEMANA):", 
+                fontsize=16, ha='center', weight='bold')  # Ajustado de 0.61 para 0.60
+        
+        # Obter previsão para a próxima semana (5 dias úteis)
+        if df_futuro is not None and len(df_futuro) >= 5:
+            semana_retorno = df_futuro['retorno'].iloc[:5].sum()
+            semana_preco_final = df_futuro['close'].iloc[4]
+            semana_data_final = df_futuro.index[4].strftime('%d/%m/%Y')
+            
+            if semana_retorno > 0:
+                recomendacao_swing = "COMPRA"
+                cor_swing = "green"
+            else:
+                recomendacao_swing = "VENDA"
+                cor_swing = "red"
+            
+            plt.text(0.5, 0.56, 
+                    f"Período: {df_futuro.index[0].strftime('%d/%m/%Y')} a {semana_data_final}\n"
+                    f"Preço final previsto: R$ {semana_preco_final:.2f}\n"
+                    f"Retorno acumulado previsto: {semana_retorno*100:.2f}%\n"
+                    f"Recomendação: {recomendacao_swing}",
+                    fontsize=14, ha='center', color=cor_swing)  # Ajustado de 0.57 para 0.56
+            
+            # Adicionar detalhes dos dias da semana
+            dias_semana = []
+            for i in range(min(5, len(df_futuro))):
+                dia = df_futuro.index[i].strftime('%d/%m')
+                retorno = df_futuro['retorno'].iloc[i] * 100
+                dias_semana.append(f"{dia}: {retorno:+.2f}%")
+            
+            plt.text(0.5, 0.50, 
+                    "Previsão diária:\n" + "\n".join(dias_semana),
+                    fontsize=12, ha='center')  # Ajustado de 0.51 para 0.50
+        else:
+            # Usar dados históricos recentes se não houver previsões futuras
+            ultimos_5_dias = df.iloc[-5:]
+            semana_retorno = ultimos_5_dias['retorno'].sum()
+            semana_preco_final = ultimos_5_dias['close'].iloc[-1]
+            semana_data_inicial = ultimos_5_dias.index[0].strftime('%d/%m/%Y')
+            semana_data_final = ultimos_5_dias.index[-1].strftime('%d/%m/%Y')
+            
+            if semana_retorno > 0:
+                recomendacao_swing = "COMPRA"
+                cor_swing = "green"
+            else:
+                recomendacao_swing = "VENDA"
+                cor_swing = "red"
+            
+            plt.text(0.5, 0.56, 
+                    f"Período: {semana_data_inicial} a {semana_data_final} (dados históricos)\n"
+                    f"Preço final: R$ {semana_preco_final:.2f}\n"
+                    f"Retorno acumulado recente: {semana_retorno*100:.2f}%\n"
+                    f"Recomendação baseada em tendência recente: {recomendacao_swing}",
+                    fontsize=14, ha='center', color=cor_swing)
+            
+            # Adicionar detalhes dos dias da semana
+            dias_semana = []
+            for i in range(len(ultimos_5_dias)):
+                dia = ultimos_5_dias.index[i].strftime('%d/%m')
+                retorno = ultimos_5_dias['retorno'].iloc[i] * 100
+                dias_semana.append(f"{dia}: {retorno:+.2f}%")
+            
+            plt.text(0.5, 0.50, 
+                    "Retornos diários recentes:\n" + "\n".join(dias_semana),
+                    fontsize=12, ha='center')
+        
+        # Linha divisória - AUMENTAR ESPAÇAMENTO VERTICAL
+        plt.axhline(y=0.46, color='gray', linestyle='-', alpha=0.3)  # Ajustado de 0.48 para 0.46
+        
+        # Recomendações para Holding (próximo ano)
+        plt.text(0.5, 0.43, "RECOMENDAÇÕES PARA POSIÇÃO DE LONGO PRAZO (PRÓXIMO ANO):", 
+                fontsize=16, ha='center', weight='bold')  # Ajustado de 0.45 para 0.43
+        
+        # Calcular tendência de longo prazo baseada nas médias móveis
+        ultimo_preco = df['close'].iloc[-1]
+        sma60 = df['SMA 60'].iloc[-1]
+        sma200 = df['SMA 200'].iloc[-1]
+        
+        if sma60 > sma200:
+            tendencia = "ALTA"
+            recomendacao_holding = "COMPRA"
+            cor_holding = "green"
+        else:
+            tendencia = "BAIXA"
+            recomendacao_holding = "VENDA/AGUARDE"
+            cor_holding = "red"
+        
+        # Projetar retorno anual baseado nas previsões disponíveis
+        if df_futuro is not None and len(df_futuro) > 0:
+            # Usar a média diária para projetar o ano
+            retorno_medio_diario = df_futuro['retorno'].mean()
+            retorno_anual_projetado = ((1 + retorno_medio_diario) ** 252) - 1
+            preco_anual_projetado = ultimo_preco * (1 + retorno_anual_projetado)
+            
+            plt.text(0.5, 0.39, 
+                    f"Tendência atual: {tendencia}\n"
+                    f"Preço atual: R$ {ultimo_preco:.2f}\n"
+                    f"Preço projetado (1 ano): R$ {preco_anual_projetado:.2f}\n"
+                    f"Retorno anual projetado: {retorno_anual_projetado*100:.2f}%\n"
+                    f"Recomendação: {recomendacao_holding}",
+                    fontsize=14, ha='center', color=cor_holding)  # Ajustado de 0.41 para 0.39
+            
+            # Adicionar análise técnica de longo prazo
+            plt.text(0.5, 0.32, 
+                    f"Análise técnica de longo prazo:\n"
+                    f"• Média Móvel 60 dias: R$ {sma60:.2f}\n"
+                    f"• Média Móvel 200 dias: R$ {sma200:.2f}\n"
+                    f"• Diferença entre médias: {(sma60/sma200-1)*100:+.2f}%",
+                    fontsize=14, ha='center')  # Ajustado de 0.34 para 0.32
+        else:
+            # Usar dados históricos para projeção
+            retorno_medio_diario = df['retorno'].iloc[-90:].mean()  # Média dos últimos 90 dias
+            retorno_anual_projetado = ((1 + retorno_medio_diario) ** 252) - 1
+            preco_anual_projetado = ultimo_preco * (1 + retorno_anual_projetado)
+            
+            plt.text(0.5, 0.39, 
+                    f"Tendência atual: {tendencia}\n"
+                    f"Preço atual: R$ {ultimo_preco:.2f}\n"
+                    f"Preço projetado (1 ano): R$ {preco_anual_projetado:.2f}\n"
+                    f"Retorno anual projetado: {retorno_anual_projetado*100:.2f}%\n"
+                    f"Recomendação: {recomendacao_holding}",
+                    fontsize=14, ha='center', color=cor_holding)
+            
+            # Adicionar análise técnica de longo prazo
+            plt.text(0.5, 0.32, 
+                    f"Análise técnica de longo prazo:\n"
+                    f"• Média Móvel 60 dias: R$ {sma60:.2f}\n"
+                    f"• Média Móvel 200 dias: R$ {sma200:.2f}\n"
+                    f"• Diferença entre médias: {(sma60/sma200-1)*100:+.2f}%",
+                    fontsize=14, ha='center')
+        
+        # Linha divisória - AUMENTAR ESPAÇAMENTO VERTICAL
+        plt.axhline(y=0.28, color='gray', linestyle='-', alpha=0.3)  # Ajustado de 0.30 para 0.28
+        
+        # Resumo das recomendações
+        plt.text(0.5, 0.25, "RESUMO DAS RECOMENDAÇÕES:", fontsize=16, ha='center', weight='bold')  # Ajustado de 0.27 para 0.25
+        
+        plt.text(0.5, 0.21, 
+                f"Scalping (1 dia): {recomendacao_scalp if 'recomendacao_scalp' in locals() else 'N/A'}\n"
+                f"Swing Trade (1 semana): {recomendacao_swing if 'recomendacao_swing' in locals() else 'N/A'}\n"
+                f"Posição de Longo Prazo (1 ano): {recomendacao_holding}",
+                fontsize=14, ha='center')  # Ajustado de 0.23 para 0.21
+        
+        # Aviso importante
+        plt.text(0.5, 0.15, "AVISO IMPORTANTE:", fontsize=14, ha='center', weight='bold', color='red')
+        
+        plt.text(0.5, 0.10, 
+                "Este relatório é baseado em modelos matemáticos e análise técnica.\n"
+                "Resultados passados não garantem retornos futuros.\n"
+                "Sempre faça sua própria análise e considere seu perfil de risco\n"
+                "antes de tomar decisões de investimento.",
+                fontsize=12, ha='center', style='italic')
+        
+        # Rodapé
+        plt.text(0.5, 0.03, 
+                f"Análise gerada por modelo híbrido LSTM-Transformer-GRU\n"
+                f"Precisão estimada: {precisao_percentual:.2f}%",
+                fontsize=10, ha='center', color='gray')
+        
+        # Remover eixos
+        plt.axis('off')
+        
+        # Adicionar borda
+        plt.gca().spines['top'].set_visible(True)
+        plt.gca().spines['right'].set_visible(True)
+        plt.gca().spines['bottom'].set_visible(True)
+        plt.gca().spines['left'].set_visible(True)
+        
+        # Salvar figura
+        plt.savefig(f'relatorio_recomendacoes_{ticker}.png', dpi=300, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"Relatório de recomendações salvo como 'relatorio_recomendacoes_{ticker}.png'")
+        
+        return True
+    except Exception as e:
+        print(f"Erro ao criar relatório de recomendações: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Modificar a função principal para incluir as novas funcionalidades
 def main():
     try:
         # Inicia o cronômetro
@@ -638,7 +1670,7 @@ def main():
         df, nome_ativo, setor, industria = rmta_extrai_dados(ticker)
         print(f"Dados baixados com sucesso. Total de {len(df)} registros.")
         
-        # O restante do código permanece igual
+        # O restante do código permanece igual até a parte das novas funcionalidades
         print("\n" + "="*50)
         print("ETAPA 2: ENGENHARIA DE ATRIBUTOS")
         print("="*50)
@@ -851,15 +1883,15 @@ def main():
         retorno_acumulado = df["retorno"].iloc[split_val:].cumsum().iloc[-1]
         estrategia_acumulada = df["estrategia"].iloc[split_val:].cumsum().iloc[-1]
         
-        print(f"Retorno acumulado buy & hold (período de teste): {retorno_acumulado:.4f} ({retorno_acumulado*100:.2f}%)")
-        print(f"Retorno acumulado da estratégia (período de teste): {estrategia_acumulada:.4f} ({estrategia_acumulada*100:.2f}%)")
+        print(f"Retorno acumulado comprar e manter (período de teste): {retorno_acumulado:.4f} ({retorno_acumulado*100:.2f}%")
+        print(f"Retorno acumulado da estratégia (período de teste): {estrategia_acumulada:.4f} ({estrategia_acumulada*100:.2f}%")
         
         # Cálculo do Sharpe Ratio (assumindo taxa livre de risco de 0.1% ao dia)
         risk_free_rate = 0.001
         sharpe_bh = (df["retorno"].iloc[split_val:].mean() - risk_free_rate) / df["retorno"].iloc[split_val:].std()
         sharpe_strategy = (df["estrategia"].iloc[split_val:].mean() - risk_free_rate) / df["estrategia"].iloc[split_val:].std()
         
-        print(f"Sharpe Ratio buy & hold: {sharpe_bh:.4f}")
+        print(f"Sharpe Ratio comprar e manter: {sharpe_bh:.4f}")
         print(f"Sharpe Ratio estratégia: {sharpe_strategy:.4f}")
         
         # Gerar previsões futuras para 3 meses (90 dias)
@@ -871,19 +1903,38 @@ def main():
         
         # Criar gráfico de barras para retornos mensais
         print("\n" + "="*50)
-        print("ETAPA 12: CRIAÇÃO DE GRÁFICO DE BARRAS PARA RETORNOS MENSAIS")
-        print("="*50)
-        criar_grafico_barras_retorno_mensal(df, split_val, ticker, nome_ativo)
-        
-        # Criar gráfico detalhado da estratégia
-        print("\n" + "="*50)
-        print("ETAPA 13: CRIAÇÃO DE GRÁFICO DETALHADO DA ESTRATÉGIA")
+        print("ETAPA 12: CRIAÇÃO DE GRÁFICO DETALHADO DA ESTRATÉGIA")
         print("="*50)
         criar_grafico_estrategia(df, df_futuro, split_val, ticker, nome_ativo, setor, industria)
         
+        # Criar gráficos específicos para swing trade e holding position
+        print("\n" + "="*50)
+        print("ETAPA 14: CRIAÇÃO DE GRÁFICOS ESPECÍFICOS PARA ESTRATÉGIAS")
+        print("="*50)
+        criar_grafico_candlestick_swing_trade(df, df_futuro, split_val, ticker, nome_ativo)
+        criar_grafico_candlestick_holding(df, df_futuro, split_val, ticker, nome_ativo)
+        
+        # NOVA ETAPA: Criar gráfico de candlestick para estratégia de scalping
+        print("\n" + "="*50)
+        print("ETAPA 15: CRIAÇÃO DE GRÁFICO DE CANDLESTICK PARA ESTRATÉGIA DE SCALPING")
+        print("="*50)
+        criar_grafico_candlestick_scalping(df, df_futuro, ticker, nome_ativo)
+        
+        # NOVA ETAPA: Criar imagens explicativas para as estratégias
+        print("\n" + "="*50)
+        print("ETAPA 16: CRIAÇÃO DE IMAGENS EXPLICATIVAS PARA AS ESTRATÉGIAS")
+        print("="*50)
+        criar_imagens_explicativas(ticker)
+        
+        # NOVA ETAPA: Criar relatório com recomendações do modelo
+        print("\n" + "="*50)
+        print("ETAPA 17: CRIAÇÃO DE RELATÓRIO COM RECOMENDAÇÕES DO MODELO")
+        print("="*50)
+        criar_relatorio_recomendacoes(df, df_futuro, ticker, nome_ativo, mse, rmse, mae, r2)
+        
         # Salvar o modelo
         print("\n" + "="*50)
-        print("ETAPA 14: SALVANDO RESULTADOS")
+        print("ETAPA 18: SALVANDO RESULTADOS")
         print("="*50)
         print("Salvando o modelo...")
         modelo_rmta.save(f'modelo_tft_{ticker}.h5')
@@ -923,25 +1974,25 @@ def main():
             f.write(f"# Período analisado: {df.index[0].strftime('%d/%m/%Y')} a {df.index[-1].strftime('%d/%m/%Y')}\n")
             f.write(f"# Setor: {setor} | Indústria: {industria}\n")
             f.write(f"# Métricas do modelo: MSE={mse:.6f}, RMSE={rmse:.6f}, MAE={mae:.6f}, R²={r2:.6f}\n")
-            f.write(f"# Retorno Buy & Hold: {retorno_acumulado*100:.2f}%, Retorno Estratégia: {estrategia_acumulada*100:.2f}%\n")
-            f.write(f"# Sharpe Ratio Buy & Hold: {sharpe_bh:.4f}, Sharpe Ratio Estratégia: {sharpe_strategy:.4f}\n\n")
+            f.write(f"# Retorno Comprar e Manter: {retorno_acumulado*100:.2f}%, Retorno Estratégia: {estrategia_acumulada*100:.2f}%\n")
+            f.write(f"# Sharpe Ratio Comprar e Manter: {sharpe_bh:.4f}, Sharpe Ratio Estratégia: {sharpe_strategy:.4f}\n\n")
             
-            f.write(f"# ESTRATÉGIA DE NEGOCIAÇÃO DIRECIONAL COM APRENDIZADO PROFUNDO\n")
-            f.write(f"# Esta estratégia utiliza um modelo híbrido LSTM-Transformer-GRU para prever a direção do movimento de preço.\n")
-            f.write(f"# Quando o modelo prevê um retorno positivo, a estratégia assume uma posição comprada (LONG).\n")
-            f.write(f"# Quando o modelo prevê um retorno negativo, a estratégia assume uma posição vendida (SHORT).\n")
-            f.write(f"# As posições são ajustadas diariamente com base nas novas previsões do modelo.\n\n")
+            f.write(f"# COMPARAÇÃO DE ESTRATÉGIAS DE NEGOCIAÇÃO\n")
+            f.write(f"# Este arquivo contém resultados de três estratégias de negociação:\n")
+            f.write(f"# 1. SCALPING: Operações de curtíssimo prazo com stop curto e relação risco:retorno de 2:1\n")
+            f.write(f"# 2. SWING TRADE: Utiliza modelo híbrido LSTM-Transformer-GRU para prever movimentos diários\n")
+            f.write(f"# 3. POSIÇÃO DE LONGO PRAZO: Baseada em cruzamentos de médias móveis de longo prazo\n\n")
             
             f.write(f"# Descrição das colunas:\n")
-            f.write(f"# - close: Preço de fechamento em dólares\n")
+            f.write(f"# - close: Preço de fechamento em reais\n")
             f.write(f"# - retorno: Retorno diário real\n")
             f.write(f"# - prediction: Retorno previsto pelo modelo\n")
             f.write(f"# - sinal: Sinal de negociação (1=compra, -1=venda, 0=neutro)\n")
             f.write(f"# - estrategia: Retorno da estratégia (retorno * sinal)\n")
             f.write(f"# - acerto: Indica se o modelo acertou a direção (1=sim, 0=não)\n")
-            f.write(f"# - retorno_acumulado: Retorno acumulado da estratégia Buy & Hold\n")
+            f.write(f"# - retorno_acumulado: Retorno acumulado da estratégia Comprar e Manter\n")
             f.write(f"# - estrategia_acumulada: Retorno acumulado da estratégia do modelo\n")
-            f.write(f"# - tipo: 'histórico' para dados reais, 'previsão' para previsões futuras (3 meses)\n\n")
+            f.write(f"# - tipo: 'histórico' para dados reais, 'previsão' para previsões futuras\n\n")
         
         resultados_futuros.to_csv(f'resultados_modelo_{ticker}.csv', mode='a')
         print(f"Resultados salvos em 'resultados_modelo_{ticker}.csv'")
@@ -956,8 +2007,15 @@ def main():
         print(f"1. historico_treinamento_{ticker}.png - Gráfico do histórico de treinamento")
         print(f"2. retorno_mensal_barras_{ticker}.png - Gráfico de barras dos retornos mensais")
         print(f"3. estrategia_detalhada_{ticker}.png - Gráfico detalhado da estratégia com previsões de 3 meses")
-        print(f"4. resultados_modelo_{ticker}.csv - Resultados detalhados e previsões futuras")
-        print(f"5. modelo_tft_{ticker}.h5 - Modelo treinado salvo")
+        print(f"4. swing_trade_candlestick_{ticker}.png - Gráfico de candlestick para estratégia de swing trade")
+        print(f"5. holding_position_candlestick_{ticker}.png - Gráfico de candlestick para estratégia de posição de longo prazo")
+        print(f"6. scalping_candlestick_{ticker}.png - Gráfico de candlestick para estratégia de scalping")
+        print(f"7. explicacao_scalping_{ticker}.png - Imagem explicativa da estratégia de scalping")
+        print(f"8. explicacao_swing_trade_{ticker}.png - Imagem explicativa da estratégia de swing trade")
+        print(f"9. explicacao_holding_{ticker}.png - Imagem explicativa da estratégia de posição de longo prazo")
+        print(f"10. relatorio_recomendacoes_{ticker}.png - Relatório com recomendações do modelo")
+        print(f"11. resultados_modelo_{ticker}.csv - Resultados detalhados e previsões futuras")
+        print(f"12. modelo_tft_{ticker}.h5 - Modelo treinado salvo")
         
     except Exception as e:
         print(f"\nERRO DURANTE A EXECUÇÃO: {e}")
