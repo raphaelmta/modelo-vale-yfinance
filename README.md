@@ -30,4 +30,39 @@ Este projeto utiliza aprendizado profundo com redes neurais híbridas (LSTM, Tra
 - [mplfinance](https://github.com/matplotlib/mplfinance)
 
 ---
+## ⚙️ Instalação
+
+ Instale as dependências:
+
+```bash
+pip install -r requirements.txt
+```
+
+**Se não tiver um `requirements.txt`, instale manualmente:**
+
+```bash
+pip install pandas numpy yfinance matplotlib mplfinance scikit-learn tensorflow ta
+```
+
+---
+
+## 🚀 Como Usar
+
+1. Edite o código para inserir o ticker da ação desejada (ex: `VALE3.SA`, `PETR4.SA`, `AAPL`, etc.)
+2. Execute o script `modelo_atualizado.py`
+3. O script irá:
+   - Baixar os dados
+   - Criar e treinar o modelo
+   - Fazer previsões
+   - Gerar gráficos e relatórios automáticos
+
+---
+
+## 📈 Exemplos de Saída
+
+- `retorno_mensal_barras_<ticker>.png`
+- `swing_trade_candlestick_<ticker>.png`
+- `holding_position_candlestick_<ticker>.png`
+- `estrategia_detalhada_<ticker>.png`
+- `relatorio_recomendacoes_<ticker>.png`
 
